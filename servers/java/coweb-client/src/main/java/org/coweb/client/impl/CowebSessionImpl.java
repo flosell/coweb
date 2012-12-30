@@ -1,15 +1,20 @@
 package org.coweb.client.impl;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.http.client.ClientProtocolException;
+import org.apache.http.client.fluent.Request;
+import org.apache.http.entity.ContentType;
+import org.codehaus.jackson.JsonGenerationException;
+import org.codehaus.jackson.JsonParseException;
+import org.codehaus.jackson.map.JsonMappingException;
+import org.codehaus.jackson.map.ObjectMapper;
 import org.cometd.bayeux.Bayeux;
 import org.cometd.bayeux.Channel;
 import org.cometd.bayeux.Message;
-import org.cometd.bayeux.Message.Mutable;
-import org.cometd.bayeux.client.ClientSession;
-import org.cometd.bayeux.client.ClientSession.Extension;
 import org.cometd.bayeux.client.ClientSessionChannel;
 import org.cometd.bayeux.client.ClientSessionChannel.ClientSessionChannelListener;
 import org.cometd.bayeux.client.ClientSessionChannel.MessageListener;
@@ -20,19 +25,59 @@ import org.cometd.client.transport.ClientTransport;
 import org.cometd.client.transport.LongPollingTransport;
 import org.cometd.common.JSONContext.Client;
 import org.coweb.client.ICowebSession;
+import org.coweb.client.impl.dtos.AdminRequest;
 import org.coweb.client.impl.dtos.AdminResponse;
 import org.eclipse.jetty.client.HttpClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class CowebSessionImpl implements ICowebSession {
-	private static final Logger logger = LoggerFactory
+	static final Logger logger = LoggerFactory
 			.getLogger(CowebSessionImpl.class);
-	
+
 	public IStateCallback stateCallback;
 	public ISyncCallback syncCallback;
 
-	public void init(final AdminResponse adminResponse, final String token) throws Exception {
+	private String host;
+
+	private String adminPath;
+
+	Map<String, Object> userDefined;
+
+	/**
+	 * 
+	 * @param host
+	 *            the servers host-address, e.g. http://localhost:8080
+	 * @param adminPath
+	 *            the path to the adminServlet e.g. /admin
+	 */
+	public CowebSessionImpl(String host, String adminPath) {
+		this.host = host;
+		this.adminPath = adminPath;
+	}
+
+	public void connect(String key, Map<String, Object> userDefined) throws Exception {
+		this.userDefined = userDefined;
+		AdminResponse resp = sendAdminRequest(key);
+		init(resp);
+	}
+
+	private AdminResponse sendAdminRequest(String key) throws JsonGenerationException, JsonMappingException, IOException {
+			ObjectMapper om = new ObjectMapper(); // TODO: remove this dependency?
+			String req = om.writeValueAsString(new AdminRequest(key, true,
+					false, host, ""));
+
+			logger.debug("req: {}", req);
+			String resp = post(req, host+adminPath);
+			logger.debug("admin resp: {}", resp);
+
+			AdminResponse adminResponse = om.readValue(resp,
+					AdminResponse.class);
+			return adminResponse;
+	}
+
+	private void init(final AdminResponse adminResponse)
+			throws Exception {
 		// Prepare the HTTP transport
 		HttpClient httpClient = new HttpClient();
 		httpClient.start();
@@ -41,59 +86,22 @@ public class CowebSessionImpl implements ICowebSession {
 
 		// Configure the BayeuxClient, with the websocket transport listed
 		// before the http transport
-		final BayeuxClient client = new BayeuxClient("http://localhost:9999/cometd",
-				httpTransport);
+		String cometUrl = host+adminResponse.getSessionurl();
+		final BayeuxClient client = new BayeuxClient(
+				cometUrl, httpTransport);
 		client.addExtension(new AckExtension());
-		client.addExtension(new Extension() {
-
-			@Override
-			public boolean rcv(ClientSession session, Mutable message) {
-				// TODO Auto-generated method stub
-				return true;
-			}
-
-			@Override
-			public boolean rcvMeta(ClientSession session, Mutable message) {
-				// TODO Auto-generated method stub
-				return true;
-			}
-
-			@Override
-			public boolean send(ClientSession session, Mutable message) {
-				logger.debug("send");
-				return processCustom(adminResponse, message);
-			}
-
-			@Override
-			public boolean sendMeta(ClientSession session, Mutable message) {
-				logger.debug("sendMeta");
-				return processCustom(adminResponse, message);
-			}
-
-			private boolean processCustom(final AdminResponse adminResponse,
-					Mutable message) {
-				HashMap<String, Object> hashMap = new HashMap<String,Object>();
-				hashMap.put("sessionid", adminResponse.getSessionid());
-				hashMap.put("updaterType", "default");
-				message.getExt(true).put("coweb", hashMap);
-				
-				hashMap = new HashMap<String, Object>();
-				hashMap.put("token", token);
-				message.getExt(true).put("userDefined", hashMap);
-				// TODO Auto-generated method stub
-				return true;
-			}
-			
-		});
+		client.addExtension(new CowebClientExtension(this, adminResponse));
 		client.handshake();
 		boolean handshaken = client.waitFor(1000, State.CONNECTED);
 		if (handshaken) {
 			System.out.println("HANDSHAKE SUCCESSFUL");
-			subscribeChannel(client, "/session/"+adminResponse.getSessionid()+"/roster/*");
+			subscribeChannel(client, "/session/" + adminResponse.getSessionid()
+					+ "/roster/*");
 			subscribeChannel(client, "/session/sync/*");
-			subscribeChannel(client, "/session/"+adminResponse.getSessionid()+"/sync/*");
+			subscribeChannel(client, "/session/" + adminResponse.getSessionid()
+					+ "/sync/*");
 			subscribeChannel(client, "/service/session/join/*");
-		}else {
+		} else {
 			logger.debug("HANDSHAKE NOT SUCCESSFUL");
 		}
 	}
@@ -104,21 +112,20 @@ public class CowebSessionImpl implements ICowebSession {
 
 			@Override
 			public void onMessage(ClientSessionChannel channel, Message message) {
-				System.out.println("############### got message on channel"+message.getChannel());
-				System.out.println("############### message data: "+message.getData());
+				System.out.println("############### got message on channel"
+						+ message.getChannel());
+				System.out.println("############### message data: "
+						+ message.getData());
 				if (message.getChannel().endsWith("state")) {
 					handleStateMessage(message);
-//					Object[] data = (Object[]) message.getData();
-//					Object[] value = (Object[]) ((Map<String, Object>) data[0]).get("value");
-//					System.out.println(Arrays.deepToString(value));
-				}else if (message.getChannel().endsWith("/sync/app")) {
+				} else if (message.getChannel().endsWith("/sync/app")) {
 					handleSyncMessage(message);
 				}
 				logger.debug("On channel {}: {}", channelName, message);
 			}
 
 			private void handleSyncMessage(Message message) {
-				if (syncCallback!=null) {
+				if (syncCallback != null) {
 					syncCallback.syncReceived(message);
 				}
 			}
@@ -126,31 +133,44 @@ public class CowebSessionImpl implements ICowebSession {
 			private void handleStateMessage(Message message) {
 				Object data = message.getData();
 				if (data instanceof Object[]) {
-					for (Object o : (Object[])data) {
+					for (Object o : (Object[]) data) {
 						if (o instanceof HashMap) {
-							System.out.println("!!!!!!!!!!!!!!! message contained map: "+o);
+							System.out
+									.println("!!!!!!!!!!!!!!! message contained map: "
+											+ o);
 							HashMap m = (HashMap) o;
 							String topic = (String) m.get("topic");
 							if (!topic.equals("coweb.engine.state")) {
-								if (stateCallback!=null) {
-									stateCallback.stateReceived(topic, (HashMap<String, Object>) m.get("value"));
+								if (stateCallback != null) {
+									stateCallback.stateReceived(topic,
+											(HashMap<String, Object>) m
+													.get("value"));
 								}
 							}
-						}else {
-							System.out.println("NOOOOOOO, o was "+o);
+						} else {
+							System.out.println("NOOOOOOO, o was " + o);
 						}
 					}
-				}else {
-					System.out.println("NOOOOOOO data was "+data);
+				} else {
+					System.out.println("NOOOOOOO data was " + data);
 				}
 			}
 		});
 	}
-	
+
+	public static String post(String inputJson, String theUrl)
+			throws ClientProtocolException, IOException {
+		logger.debug("posting to {}", theUrl); // TODO use jetty-client instead of apache?
+		return Request.Post(theUrl)
+				.bodyString(inputJson, ContentType.APPLICATION_JSON)
+				.connectTimeout(10000).socketTimeout(10000).execute()
+				.returnContent().asString();
+	}
+
 	public void setStateCallback(IStateCallback stateCallback) {
 		this.stateCallback = stateCallback;
 	}
-	
+
 	public void setSyncCallback(ISyncCallback syncCallback) {
 		this.syncCallback = syncCallback;
 	}
