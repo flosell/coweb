@@ -9,6 +9,7 @@ import org.apache.http.entity.ContentType;
 import org.codehaus.jackson.JsonGenerationException;
 import org.codehaus.jackson.map.JsonMappingException;
 import org.codehaus.jackson.map.ObjectMapper;
+import org.cometd.bayeux.client.ClientSessionChannel;
 import org.cometd.client.BayeuxClient;
 import org.cometd.client.BayeuxClient.State;
 import org.cometd.client.ext.AckExtension;
@@ -17,6 +18,7 @@ import org.cometd.client.transport.LongPollingTransport;
 import org.coweb.client.ICowebSession;
 import org.coweb.client.impl.dtos.AdminRequest;
 import org.coweb.client.impl.dtos.AdminResponse;
+import org.coweb.client.impl.dtos.Sync;
 import org.coweb.client.impl.handlers.SessionJoinHandler;
 import org.coweb.client.impl.handlers.SyncHandler;
 import org.eclipse.jetty.client.HttpClient;
@@ -36,6 +38,16 @@ public class CowebSessionImpl implements ICowebSession {
 
 	private Map<String, Object> userDefined;
 
+	private ObjectMapper om;
+
+	private BayeuxClient client;
+
+	private SyncHandler syncHandler;
+
+	private SessionJoinHandler sjHandler;
+
+	private ClientSessionChannel syncChannel;
+
 	/**
 	 * 
 	 * @param host
@@ -46,6 +58,7 @@ public class CowebSessionImpl implements ICowebSession {
 	public CowebSessionImpl(String host, String adminPath) {
 		this.host = host;
 		this.adminPath = adminPath;
+		om = new ObjectMapper();
 	}
 
 	public void connect(String key, Map<String, Object> userDefined)
@@ -54,10 +67,15 @@ public class CowebSessionImpl implements ICowebSession {
 		AdminResponse resp = sendAdminRequest(key);
 		initBayeux(resp);
 	}
+	
+	public synchronized void sendSync(String value, SyncType type, int position, String topic) {
+		Sync data = new Sync(value,type,position,topic);
+		syncChannel.publish(data.asMap());
+	}
 
 	private AdminResponse sendAdminRequest(String key)
 			throws JsonGenerationException, JsonMappingException, IOException {
-		ObjectMapper om = new ObjectMapper(); // TODO: remove this dependency?
+		
 		String req = om.writeValueAsString(new AdminRequest(key, true, false,
 				host, ""));
 
@@ -79,13 +97,13 @@ public class CowebSessionImpl implements ICowebSession {
 		// Configure the BayeuxClient, with the websocket transport listed
 		// before the http transport
 		String cometUrl = host + adminResponse.getSessionurl();
-		final BayeuxClient client = new BayeuxClient(cometUrl, httpTransport);
+		client = new BayeuxClient(cometUrl, httpTransport);
 		client.addExtension(new AckExtension());
 		client.addExtension(new CowebClientExtension(adminResponse.getSessionid(), userDefined));
 		client.handshake();
 
-		SyncHandler syncHandler = new SyncHandler(this);
-		SessionJoinHandler sjHandler = new SessionJoinHandler(this);
+		syncHandler = new SyncHandler(this);
+		sjHandler = new SessionJoinHandler(this);
 
 		boolean handshaken = client.waitFor(1000, State.CONNECTED);
 		if (handshaken) {
@@ -94,9 +112,10 @@ public class CowebSessionImpl implements ICowebSession {
 					"/session/" + adminResponse.getSessionid() + "/roster/*")
 					.subscribe(sjHandler);
 			client.getChannel("/session/sync/*").subscribe(syncHandler);
-			client.getChannel(
-					"/session/" + adminResponse.getSessionid() + "/sync/*")
-					.subscribe(syncHandler);
+			syncChannel = client.getChannel(
+					"/session/" + adminResponse.getSessionid() + "/sync/app");
+			 client.getChannel(
+						"/session/" + adminResponse.getSessionid() + "/sync/*").subscribe(syncHandler);
 			client.getChannel("/service/session/join/*").subscribe(sjHandler);
 		} else {
 			throw new IllegalStateException("Handshake failed");

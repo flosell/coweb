@@ -6,8 +6,8 @@ import org.cometd.bayeux.client.ClientSessionChannel.MessageListener;
 import org.coweb.client.impl.CowebSessionImpl;
 import org.coweb.client.impl.ISyncCallback;
 
-public class SyncHandler implements MessageListener{
-	
+public class SyncHandler implements MessageListener {
+
 	private CowebSessionImpl parent;
 
 	public SyncHandler(CowebSessionImpl cowebSessionImpl) {
@@ -20,9 +20,9 @@ public class SyncHandler implements MessageListener{
 			handleSyncApp(message);
 		} else if (message.getChannel().endsWith("engine")) {
 			handleSyncEngine(message);
-		}else {
+		} else {
 			System.out.println("unknown: " + message.getChannel());
-		}		
+		}
 	}
 
 	private void handleSyncApp(Message message) {
@@ -34,8 +34,9 @@ public class SyncHandler implements MessageListener{
 			cb.syncReceived(message);
 		}
 	}
-	
+
 	private void handleSyncEngine(Message message) {
 		// TODO
 	}
+
 }

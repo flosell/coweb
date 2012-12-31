@@ -1,9 +1,13 @@
 package org.coweb.client;
 
+import java.io.IOException;
 import java.util.Map;
 
+import org.codehaus.jackson.JsonGenerationException;
+import org.codehaus.jackson.map.JsonMappingException;
 import org.coweb.client.impl.IStateCallback;
 import org.coweb.client.impl.ISyncCallback;
+import org.coweb.client.impl.SyncType;
 
 public interface ICowebSession {
 
@@ -13,4 +17,5 @@ public interface ICowebSession {
 
 	void connect(String key, Map<String, Object> userDefined) throws Exception;
 
+	void sendSync(String value, SyncType type, int position, String topic);
 }
