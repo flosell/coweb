@@ -30,7 +30,9 @@ public class SyncHandler implements MessageListener {
 		// executes setNull() on parent
 		// TODO: does this work? maybe it gets optimized away?
 		ISyncCallback cb = parent.getSyncCallback();
-		if (cb != null) {
+		long siteId = parent.getSiteId();
+		long messageSiteId = (Long) message.getDataAsMap().get("siteId");
+		if (cb != null && messageSiteId != siteId) {
 			cb.syncReceived(message);
 		}
 	}

@@ -48,6 +48,8 @@ public class CowebSessionImpl implements ICowebSession {
 
 	private ClientSessionChannel syncChannel;
 
+	private long siteId;
+
 	/**
 	 * 
 	 * @param host
@@ -146,6 +148,14 @@ public class CowebSessionImpl implements ICowebSession {
 
 	public ISyncCallback getSyncCallback() {
 		return syncCallback;
+	}
+
+	public void setSiteId(long siteId) {
+		this.siteId = siteId;
+	}
+	
+	public long getSiteId() {
+		return siteId;
 	}
 
 }

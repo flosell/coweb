@@ -51,7 +51,8 @@ public class SessionJoinHandler implements MessageListener{
 	}
 	
 	public void handleSiteId(Message message) {
-		// TODO
+		long siteId = (Long) message.getData();
+		parent.setSiteId(siteId);
 	}
 	
 	public void handleRoster(Message message) {
