@@ -27,14 +27,14 @@ public class CowebSessionImpl implements ICowebSession {
 	static final Logger logger = LoggerFactory
 			.getLogger(CowebSessionImpl.class);
 
-	public IStateCallback stateCallback;
-	public ISyncCallback syncCallback;
+	private IStateCallback stateCallback;
+	private ISyncCallback syncCallback;
 
 	private String host;
 
 	private String adminPath;
 
-	Map<String, Object> userDefined;
+	private Map<String, Object> userDefined;
 
 	/**
 	 * 
@@ -52,7 +52,7 @@ public class CowebSessionImpl implements ICowebSession {
 			throws Exception {
 		this.userDefined = userDefined;
 		AdminResponse resp = sendAdminRequest(key);
-		init(resp);
+		initBayeux(resp);
 	}
 
 	private AdminResponse sendAdminRequest(String key)
@@ -69,7 +69,7 @@ public class CowebSessionImpl implements ICowebSession {
 		return adminResponse;
 	}
 
-	private void init(final AdminResponse adminResponse) throws Exception {
+	private void initBayeux(final AdminResponse adminResponse) throws Exception {
 		// Prepare the HTTP transport
 		HttpClient httpClient = new HttpClient();
 		httpClient.start();
@@ -81,7 +81,7 @@ public class CowebSessionImpl implements ICowebSession {
 		String cometUrl = host + adminResponse.getSessionurl();
 		final BayeuxClient client = new BayeuxClient(cometUrl, httpTransport);
 		client.addExtension(new AckExtension());
-		client.addExtension(new CowebClientExtension(this, adminResponse));
+		client.addExtension(new CowebClientExtension(adminResponse.getSessionid(), userDefined));
 		client.handshake();
 
 		SyncHandler syncHandler = new SyncHandler(this);

@@ -4,7 +4,6 @@ import java.util.Map;
 
 import org.coweb.client.impl.IStateCallback;
 import org.coweb.client.impl.ISyncCallback;
-import org.coweb.client.impl.dtos.AdminResponse;
 
 public interface ICowebSession {
 
