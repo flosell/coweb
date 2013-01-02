@@ -26,7 +26,6 @@
 			<groupId>org.apache.httpcomponents</groupId>
 			<artifactId>fluent-hc</artifactId>
 			<version>4.2.1</version>
-			<scope>test</scope>
 			<exclusions>
 				<exclusion>
 					<groupId>commons-logging</groupId>
