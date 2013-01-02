@@ -2,6 +2,7 @@ package org.coweb.client.impl;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.fluent.Request;
@@ -22,6 +23,7 @@ import org.coweb.client.impl.dtos.Sync;
 import org.coweb.client.impl.handlers.SessionJoinHandler;
 import org.coweb.client.impl.handlers.SyncHandler;
 import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.util.component.AbstractLifeCycle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -47,8 +49,12 @@ public class CowebSessionImpl implements ICowebSession {
 	private SessionJoinHandler sjHandler;
 
 	private ClientSessionChannel syncChannel;
+	
+	MessageErrorHandler errorHandler;
 
 	private long siteId;
+
+	private HttpClient httpClient;
 
 	/**
 	 * 
@@ -61,6 +67,12 @@ public class CowebSessionImpl implements ICowebSession {
 		this.host = host;
 		this.adminPath = adminPath;
 		om = new ObjectMapper();
+	}
+	
+	public void disconnect() throws Exception  {
+		client.disconnect(1000);
+		TimeUnit.SECONDS.sleep(5);
+		httpClient.stop();			
 	}
 
 	public void connect(String key, Map<String, Object> userDefined)
@@ -91,23 +103,24 @@ public class CowebSessionImpl implements ICowebSession {
 
 	private void initBayeux(final AdminResponse adminResponse) throws Exception {
 		// Prepare the HTTP transport
-		HttpClient httpClient = new HttpClient();
+		httpClient = new HttpClient();
 		httpClient.start();
 		ClientTransport httpTransport = new LongPollingTransport(null,
 				httpClient);
+		
 
 		// Configure the BayeuxClient, with the websocket transport listed
 		// before the http transport
 		String cometUrl = host + adminResponse.getSessionurl();
-		client = new BayeuxClient(cometUrl, httpTransport);
+		client = new MyBayeuxClient(this, cometUrl, httpTransport);
 		client.addExtension(new AckExtension());
 		client.addExtension(new CowebClientExtension(adminResponse.getSessionid(), userDefined));
 		client.handshake();
 
 		syncHandler = new SyncHandler(this);
 		sjHandler = new SessionJoinHandler(this);
-
-		boolean handshaken = client.waitFor(1000, State.CONNECTED);
+		
+		boolean handshaken = client.waitFor(10000, State.CONNECTED);
 		if (handshaken) {
 			System.out.println("HANDSHAKE SUCCESSFUL");
 			client.getChannel(
@@ -119,6 +132,7 @@ public class CowebSessionImpl implements ICowebSession {
 			 client.getChannel(
 						"/session/" + adminResponse.getSessionid() + "/sync/*").subscribe(syncHandler);
 			client.getChannel("/service/session/join/*").subscribe(sjHandler);
+			
 		} else {
 			throw new IllegalStateException("Handshake failed");
 		}
@@ -156,6 +170,14 @@ public class CowebSessionImpl implements ICowebSession {
 	
 	public long getSiteId() {
 		return siteId;
+	}
+	
+	public void setErrorHandler(MessageErrorHandler errorHandler) {
+		this.errorHandler = errorHandler;
+	}
+
+	public MessageErrorHandler getErrorHandler() {
+		return errorHandler;
 	}
 
 }
